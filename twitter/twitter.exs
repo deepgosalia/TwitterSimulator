@@ -21,7 +21,7 @@ defmodule Twitter do
 
     # create user process and store its id
     Enum.each(1..num_usr, fn(x)->
-      User.start_link([x,x,1]) # register user, (Assumed user id is x and pswd is x)
+      User.start_link([x,x,1,[]]) # register user, (Assumed user id is x and pswd is x)
       :ets.insert(:subTable, {x,[]})
     end)
 

@@ -10,20 +10,20 @@ defmodule Engine do
     {:ok,arg}
   end
 
-  def distributeMsg(uid, msg) do
+  def distributeMsg(uid, msg_id) do
     # for each subscriber existing send them tweet, if not online then save it else send it
     [{_,eid}] = :ets.lookup(:eid, "eid")
-    GenServer.cast(eid,{:distMsg,uid,msg})
+    GenServer.cast(eid,{:distMsg,uid,msg_id})
     # get subscriber list for user
 
   end
 
-  def handle_cast({:distMsg,uid,message},state) do
+  def handle_cast({:distMsg,uid,message_id},state) do
     [{_,subList}] = :ets.lookup(:subTable, uid)
 
     Enum.each(subList, fn(sub)->
       #sub_pid = User.getPID(sub)
-      User.receive_message(uid,sub,message)
+      User.receive_message(uid,sub,message_id)
     end)
     {:noreply,state}
   end
