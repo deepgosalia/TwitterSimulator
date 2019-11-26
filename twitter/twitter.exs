@@ -25,28 +25,32 @@ defmodule Twitter do
       :ets.insert(:subTable, {x,[]})
     end)
 
-
-
     #generate subscribers
     #Twitter.generateSub(num_usr)
     Enum.each(1..num_usr, fn(x)->
       # we will give each user num_usr/10 followers
-      cond do
-        num_usr<10 -> generateSub(x,:rand.uniform(num_usr),num_usr)
-        num_usr<100 -> generateSub(x,:rand.uniform(div(num_usr,5)),num_usr)
-        true -> generateSub(x,:rand.uniform(div(num_usr,10)),num_usr)
-      end
+      subList=Enum.reduce(1..:rand.uniform(num_usr), [] ,fn(s,acc)->
+        rand_sub = :rand.uniform(s)
+        cond do
+          rand_sub != x ->acc ++ [rand_sub]
+          true -> acc ++ []
+        end
+      end)
+      :ets.insert(:subTable,{x, Enum.uniq(subList)})
     end)
-
-    # start sending message
     Twitter.send_message(num_usr)
-
+    # pick a random user and a random sub
+    usr = :rand.uniform(num_usr)
+    [{_,subList}] = :ets.lookup(:subTable,usr)
+    IO.inspect(subList)
+    sub = Enum.random(subList)
+    Twitter.query(usr,sub)  # usr is requesting for sub
     loop()
   end
 
   def send_message(num_usr) do
     Enum.each(1..num_usr, fn(x)->
-      spawn(fn->User.send_message(x,"hello")end)  #User will get processID from the ets
+      spawn(fn->User.send_message(x,"hello")end)
     end)
   end
 
@@ -54,16 +58,12 @@ defmodule Twitter do
     loop()
   end
 
-  def generateSub(x,noOfSubs,num_usr) do
-    subList=Enum.reduce(1..noOfSubs, [] ,fn(s,acc)->
-      rand_sub = :rand.uniform(noOfSubs)
-      cond do
-        rand_sub != x ->acc ++ [rand_sub]
-        true -> acc ++ []
-      end
-    end)
-    :ets.insert(:subTable,{x, Enum.uniq(subList)})
+  # search for given subscriber
+  def query(usr,sub) do
+    IO.puts(sub)
+    Engine.queryForSub(usr,sub)
   end
+
 
 end
 

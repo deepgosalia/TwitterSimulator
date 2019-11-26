@@ -10,11 +10,29 @@ defmodule Engine do
     {:ok,arg}
   end
 
+  def getPID(uid) do
+    [{_,data}] = :ets.lookup(:usrProcessTable, uid)
+    pid = Enum.at(data,2)
+    pid
+  end
+
   def distributeMsg(uid, msg_id) do
     # for each subscriber existing send them tweet, if not online then save it else send it
     [{_,eid}] = :ets.lookup(:eid, "eid")
     GenServer.cast(eid,{:distMsg,uid,msg_id})
     # get subscriber list for user
+
+  end
+
+  def queryForSub(usr, sub) do
+    [{_,subList}] = :ets.lookup(:subTable, usr)
+    # first we need to confirm if user is subscribed to that user
+    if(Enum.member?(subList, sub)) do
+      [{_,data}] = :ets.lookup(:usrProcessTable, usr)
+      pid = Enum.at(data,2)
+      #subPID = Engine.getPID(sub)
+      GenServer.cast(pid, {:getSubMsg,sub})
+    end
 
   end
 
@@ -29,3 +47,4 @@ defmodule Engine do
   end
 
 end
+
