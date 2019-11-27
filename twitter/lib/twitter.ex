@@ -39,7 +39,14 @@ defmodule Twitter do
       end)
       :ets.insert(:subTable,{x, Enum.uniq(subList)})
     end)
-    Twitter.send_message(num_usr)
+
+    Twitter.send_message(num_usr,num_msg)
+    User.logout(3)
+    User.logout(4)
+    User.logout(5)
+    Process.sleep(100)
+    User.login(3,3)
+
     Process.sleep(3000)
     # pick a random user and a random sub
     usr = :rand.uniform(num_usr)
@@ -50,19 +57,17 @@ defmodule Twitter do
                 IO.puts("Looking for #{sub} for #{usr}")
                 Twitter.query(usr,sub)
     end
-      # usr is requesting for sub
-
-
-
     loop()
   end
 
-  def send_message(num_usr) do
-    Enum.each(1..num_usr, fn(x)->
-      Enum.each(1..:rand.uniform(x), fn(s)->
-        spawn(fn->User.send_message(x,"hello")end)
-      end)
 
+
+  def send_message(num_usr,num_msg) do
+    Enum.each(1..2, fn(x)->
+      Enum.each(1..num_msg, fn(s)->
+        spawn(fn->User.send_message(x,s,"hello#{s}")
+      end)
+      end)
     end)
   end
 

@@ -23,25 +23,26 @@ defmodule User do
     GenServer.cast(pid, {:logOutUser})
   end
 
-  def isOnline(pid) do
+  def isOnline(uid) do
+    pid = User.getPID(uid)
     status = GenServer.call(pid, :getUserStatus)
     status
   end
 
-  def send_message(uid, message) do
+  def send_message(uid,m_count, message) do
     pid = User.getPID(uid)
-    #generate time stamp
-    time_stamp = :os.system_time()
-    time_stamp = time_stamp + uid
-    :ets.insert(:msgTable,{time_stamp,[message,uid]})
-    User.addMessageSend(time_stamp,pid)
+    id = Integer.digits(uid) ++ Integer.digits(m_count)
+    id = Integer.to_string(Integer.undigits(id))
+
+    :ets.insert(:msgTable,{id,[message,uid]})
+    User.addMessageSend(id,pid)
     # send it to the engine
-    GenServer.cast(pid, {:sendMsg,uid,time_stamp})
+    GenServer.cast(pid, {:sendMsg,uid,id})
   end
 
   def receive_message(from,to,message_id) do
     sub = User.getPID(to)
-    status = User.isOnline(sub)
+    status = User.isOnline(to)
     cond do
       status == 0 ->GenServer.cast(sub,{:addToPending,message_id,from,to})
       true->User.addMessageRec(message_id,sub);
@@ -89,24 +90,42 @@ defmodule User do
 
   # TODO add whether it was a mention or retweet
   def handle_cast({:displayPendingMsg,uid},state) do
-    [{_,list}]=:ets.lookup(:pending, uid)
+
+
     pid = User.getPID(uid)
-    # add it to the current state
+
+
     cond do
-      list==[] ->IO.puts("No new tweets")
-      true-> Enum.each(list, fn([m,f])->
-        GenServer.cast(uid, {:addMsgrec,m})
+      :ets.member(:pending, uid) -> [{_,list}]=:ets.lookup(:pending, uid)
+      Enum.each(list, fn([m,f])->
+        #User.addMesageRec(m,pid)
+        GenServer.cast(pid, {:addMsgRec,m})
+        GenServer.cast(pid, {:rec_msg,f,uid,m})
       end)
+      true->IO.puts("no tweets")
     end
+
+
+
+
+
+
+
+    # add it to the current state
+
     {:noreply,state}
   end
 
 
 
   def handle_cast({:addToPending,message_id,from,to},state) do
-    [{_,curr_list}]=:ets.lookup(:pending, to)
-    curr_list=curr_list ++ [[message_id,from]]
-    :ets.insert(:pending, {to,curr_list})
+    #IO.inspect(:ets.lookup(:pending, to))
+    cond do
+      :ets.member(:pending, to) -> [{_,curr_list}]=:ets.lookup(:pending, to)
+            curr_list=curr_list ++ [[message_id,from]]
+            :ets.insert(:pending, {to,curr_list})
+      true->:ets.insert(:pending, {to,[[message_id,from]]})
+    end
     {:noreply,state}
   end
 
@@ -148,7 +167,7 @@ defmodule User do
     #subPID = Enum.at(data,2)
     # get entire msg list of that user
     list = Enum.at(state, 3)
-    IO.inspect(list)
+   # IO.inspect(list)
     # for each message search in table
     IO.puts("Here are your result")
     Enum.each(list, fn (message_id) ->
