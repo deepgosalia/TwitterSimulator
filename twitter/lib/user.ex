@@ -13,12 +13,14 @@ defmodule User do
     {:ok,usr_info}
   end
 
-  def login() do
-
+  def login(usr_id, usr_pswd) do
+    pid = User.getPID(usr_id)
+    GenServer.cast(pid, {:loginUser,usr_pswd,usr_id})
   end
 
-  def logout()do
-    
+  def logout(uid)do
+    pid = User.getPID(uid)
+    GenServer.cast(pid, {:logOutUser})
   end
 
   def isOnline(pid) do
@@ -39,9 +41,13 @@ defmodule User do
 
   def receive_message(from,to,message_id) do
     sub = User.getPID(to)
+    status = User.isOnline(sub)
+    cond do
+      status == 0 ->GenServer.cast(sub,{:addToPending,message_id,from,to})
+      true->User.addMessageRec(message_id,sub);
+            GenServer.cast(sub,{:rec_msg,from,to,message_id})
+    end
     # add message to its list
-    User.addMessageRec(message_id,sub);
-    GenServer.cast(sub,{:rec_msg,from,to,message_id})
   end
 
   def getPID(uid) do
@@ -68,6 +74,47 @@ defmodule User do
     list
   end
 
+  def handle_cast({:loginUser,pswd,uid},state) do
+    [{_,data}] = :ets.lookup(:usrProcessTable, uid)
+    p = Enum.at(data, 0)
+    if(p==pswd) do
+      IO.puts("User#{uid} logged in")
+      pid = User.getPID(uid)
+      GenServer.cast(pid,{:displayPendingMsg,uid})
+      {:noreply,[Enum.at(state, 0),Enum.at(state, 1),1,Enum.at(state, 3),Enum.at(state, 4)]}
+    end
+    {:noreply,state}
+  end
+
+
+  # TODO add whether it was a mention or retweet
+  def handle_cast({:displayPendingMsg,uid},state) do
+    [{_,list}]=:ets.lookup(:pending, uid)
+    pid = User.getPID(uid)
+    # add it to the current state
+    cond do
+      list==[] ->IO.puts("No new tweets")
+      true-> Enum.each(list, fn([m,f])->
+        GenServer.cast(uid, {:addMsgrec,m})
+      end)
+    end
+    {:noreply,state}
+  end
+
+
+
+  def handle_cast({:addToPending,message_id,from,to},state) do
+    [{_,curr_list}]=:ets.lookup(:pending, to)
+    curr_list=curr_list ++ [[message_id,from]]
+    :ets.insert(:pending, {to,curr_list})
+    {:noreply,state}
+  end
+
+  def handle_cast({:logOutUser},state) do
+    # here we simply change the state of the user
+    {:noreply,[Enum.at(state, 0),Enum.at(state, 1),0,Enum.at(state, 3),Enum.at(state, 4)]}
+  end
+
   def handle_cast({:addMsgSend,message_id},state) do
     #get list
     list = Enum.at(state,4)
@@ -77,7 +124,6 @@ defmodule User do
   end
 
   def handle_cast({:addMsgRec,message_id},state) do
-    #get list
     list = Enum.at(state,3)
     # append new message id
     list = list ++ [message_id]
@@ -98,8 +144,8 @@ defmodule User do
 
   def handle_cast({:getSubMsg,sub},state) do
 
-    [{_,data}] = :ets.lookup(:usrProcessTable, sub)
-    subPID = Enum.at(data,2)
+    #[{_,data}] = :ets.lookup(:usrProcessTable, usr)
+    #subPID = Enum.at(data,2)
     # get entire msg list of that user
     list = Enum.at(state, 3)
     IO.inspect(list)

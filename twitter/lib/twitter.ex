@@ -13,6 +13,7 @@ defmodule Twitter do
     :ets.new(:msgTable,[:set,:public,:named_table])
 
     :ets.new(:eid,[:set,:public,:named_table])
+    :ets.new(:pending, [:set,:public,:named_table])
 
     # start twitter engine
     # engines task is to distribute so it wont maintain any state
@@ -46,17 +47,22 @@ defmodule Twitter do
     cond do
       subList==[] ->IO.puts("No tweets")
       true->sub = Enum.random(subList)
-                IO.puts("Looking for #{sub}")
+                IO.puts("Looking for #{sub} for #{usr}")
                 Twitter.query(usr,sub)
-
     end
       # usr is requesting for sub
+
+
+
     loop()
   end
 
   def send_message(num_usr) do
     Enum.each(1..num_usr, fn(x)->
-      spawn(fn->User.send_message(x,"hello")end)
+      Enum.each(1..:rand.uniform(x), fn(s)->
+        spawn(fn->User.send_message(x,"hello")end)
+      end)
+
     end)
   end
 

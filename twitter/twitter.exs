@@ -21,7 +21,7 @@ defmodule Twitter do
 
     # create user process and store its id
     Enum.each(1..num_usr, fn(x)->
-      User.start_link([x,x,1,[]]) # register user, (Assumed user id is x and pswd is x)
+      User.start_link([x,x,1,[],[]]) # register user, (Assumed user id is x and pswd is x)
       :ets.insert(:subTable, {x,[]})
     end)
 
@@ -39,18 +39,27 @@ defmodule Twitter do
       :ets.insert(:subTable,{x, Enum.uniq(subList)})
     end)
     Twitter.send_message(num_usr)
+    Process.sleep(3000)
     # pick a random user and a random sub
     usr = :rand.uniform(num_usr)
     [{_,subList}] = :ets.lookup(:subTable,usr)
-    IO.inspect(subList)
-    sub = Enum.random(subList)
-    Twitter.query(usr,sub)  # usr is requesting for sub
+    cond do
+      subList==[] ->IO.puts("No tweets")
+      true->sub = Enum.random(subList)
+                IO.puts("Looking for #{sub}")
+                Twitter.query(usr,sub)
+
+    end
+      # usr is requesting for sub
     loop()
   end
 
   def send_message(num_usr) do
     Enum.each(1..num_usr, fn(x)->
-      spawn(fn->User.send_message(x,"hello")end)
+      Enum.each(1..:rand.uniform(x), fn(s)->
+        spawn(fn->User.send_message(x,"hello")end)
+      end)
+
     end)
   end
 
