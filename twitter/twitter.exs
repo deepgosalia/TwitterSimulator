@@ -13,6 +13,7 @@ defmodule Twitter do
     :ets.new(:msgTable,[:set,:public,:named_table])
 
     :ets.new(:eid,[:set,:public,:named_table])
+    :ets.new(:pending, [:set,:public,:named_table])
 
     # start twitter engine
     # engines task is to distribute so it wont maintain any state
@@ -38,7 +39,15 @@ defmodule Twitter do
       end)
       :ets.insert(:subTable,{x, Enum.uniq(subList)})
     end)
-    Twitter.send_message(num_usr)
+
+    Twitter.send_message(num_usr,num_msg)
+    # User.logout(3)
+    # User.logout(4)
+    # User.logout(5)
+    Process.sleep(100)
+    #User.login(3,3)
+    Twitter.retweet(1)
+
     Process.sleep(3000)
     # pick a random user and a random sub
     usr = :rand.uniform(num_usr)
@@ -46,20 +55,20 @@ defmodule Twitter do
     cond do
       subList==[] ->IO.puts("No tweets")
       true->sub = Enum.random(subList)
-                IO.puts("Looking for #{sub}")
+                IO.puts("Looking for #{sub} for #{usr}")
                 Twitter.query(usr,sub)
-
     end
-      # usr is requesting for sub
     loop()
   end
 
-  def send_message(num_usr) do
-    Enum.each(1..num_usr, fn(x)->
-      Enum.each(1..:rand.uniform(x), fn(s)->
-        spawn(fn->User.send_message(x,"hello")end)
-      end)
 
+
+  def send_message(num_usr,num_msg) do
+    Enum.each(1..num_usr, fn(x)->
+      Enum.each(1..num_msg, fn(s)->
+        spawn(fn->User.send_message(x,s,"hello#{s}")
+      end)
+      end)
     end)
   end
 
@@ -71,6 +80,15 @@ defmodule Twitter do
   def query(usr,sub) do
     IO.puts(sub)
     Engine.queryForSub(usr,sub)
+  end
+
+  def retweet(uid) do
+    # get all received message
+    User.retweet(uid)
+  end
+
+  def delete(uid) do
+    User.deleteUser(uid)
   end
 
 

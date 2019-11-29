@@ -5,7 +5,10 @@ defmodule User do
     usr_id = Enum.at(usr_info, 0)
     usr_pswd = Enum.at(usr_info, 1)
     live = Enum.at(usr_info, 2)
+
     :ets.insert(:usrProcessTable,{usr_id, [usr_pswd,live,usr_process_id]})
+    :ets.insert(:subTable, {usr_id,[]})
+    :ets.insert(:mentions_table, {usr_id,[]})
   end
 
   def init(usr_info) do
@@ -29,45 +32,144 @@ defmodule User do
     status
   end
 
-  def send_message(uid,m_count, message) do
+  def getFeed(uid) do
     pid = User.getPID(uid)
+    msg=GenServer.call(pid, {:get_tweets})
+    cond do
+      msg != [] -> Enum.each(msg, fn([msg_id,type,retweet])->
+        [{_,[message,from]}] = :ets.lookup(:msgTable, msg_id)
+        IO.puts("Tweet from User#{from}:message")
+      end)
+      :true
+      true->:false
+    end
+  end
+
+  def handle_call({:get_tweets},_from,state) do
+    [uid,upd,l,r,s,count] = state
+    {:reply,r,state}
+  end
+
+  def getMessageCount(uid) do
+    pid = User.getPID(uid)
+    count=GenServer.call(pid, {:getCount})
+    count
+  end
+
+  # send the count and also update it
+  def handle_call({:getCount},_from,state) do
+    [uid,upd,l,r,s,count] = state
+    {:reply,Enum.at(state, 5),[uid,upd,l,r,s,count+1]}
+  end
+
+  def handle_cast({:deleteTweets},state) do
+    [uid,upd,l,r,s,count] = state
+    Enum.each(s, fn(m_id) ->
+      if (:ets.member(:msgTable,m_id)) do
+        :ets.delete(:msgTable,m_id)
+      end
+    end)
+    {:noreply,[uid,upd,l,[],[],count]}
+  end
+
+
+  def retweet(uid) do
+    pid = User.getPID(uid)
+    # get all received message
+    GenServer.cast(pid,{:retweet,uid})
+  end
+
+  def handle_cast({:retweet,uid},state) do
+    rec_msg = Enum.at(state,3)
+    [msg_id,type,retweet_origin] = Enum.random(rec_msg)
+    # send it to subscribers
+    [{_,[message,from]}] = :ets.lookup(:msgTable, msg_id)
+    pid = User.getPID(uid)
+    User.addMessageSend(msg_id,1,from,pid)
+    # send it to the engine
+    IO.puts("#{uid} #{from}")
+    GenServer.cast(pid, {:sendMsg,uid,msg_id,1,from})
+    {:noreply,state}
+  end
+
+  def send_message(uid, message) do
+    pid = User.getPID(uid)
+    m_count = User.getMessageCount(uid)
     id = Integer.digits(uid) ++ Integer.digits(m_count)
     id = Integer.to_string(Integer.undigits(id))
 
     :ets.insert(:msgTable,{id,[message,uid]})
-    User.addMessageSend(id,pid)
+    #add to message list
+    User.addMessageSend(id,0,0,pid)
     # send it to the engine
-    GenServer.cast(pid, {:sendMsg,uid,id})
+    GenServer.cast(pid, {:sendMsg,uid,id,0,0})
+    :true
   end
 
-  def receive_message(from,to,message_id) do
+  def addMessageSend(message_id,type,retweet_origin,pid) do
+    GenServer.cast(pid, {:addMsgSend,message_id,type,retweet_origin})
+  end
+
+  def handle_cast({:addMsgSend,message_id,type,retweet_origin},state) do
+    [uid,upd,l,r,s,count] = state
+    #get list
+    list = s
+    # append new message id
+    list = list ++ [[message_id,type,retweet_origin]]
+    {:noreply, [uid,upd,l,r,list,count]}
+  end
+
+  def handle_cast({:sendMsg,uid,msg,type,retweet_origin},state) do
+    Engine.preProcessMsg(msg)
+    Engine.distributeMsg(uid,msg,type,retweet_origin);
+    {:noreply,state}
+  end
+
+
+  def receive_message(from,to,message_id,type,retweet_origin) do
     sub = User.getPID(to)
-    status = User.isOnline(to)
-    cond do
-      status == 0 ->GenServer.cast(sub,{:addToPending,message_id,from,to})
-      true->User.addMessageRec(message_id,sub);
-            GenServer.cast(sub,{:rec_msg,from,to,message_id})
-    end
+    User.addMessageRec(message_id,type,retweet_origin,sub)
+    GenServer.cast(sub,{:rec_msg,from,to,message_id,type,retweet_origin})
     # add message to its list
   end
 
+  def addMessageRec(message_id,type,retweet_origin,pid) do
+    GenServer.cast(pid, {:addMsgRec,message_id,type,retweet_origin})
+  end
+
+  def handle_cast({:addMsgRec,message_id,type,retweet_origin},state) do
+    [uid,upd,l,r,s,count] = state
+    list = r
+    # append new message id
+    list = list ++ [[message_id,type,retweet_origin]]
+    {:noreply,[uid,upd,l,list,s,count]}
+  end
+
+  def handle_cast({:rec_msg,from,to,message_id,type,retweet_origin},state) do
+    #:ets.insert(:msgTable,{time_stamp,message})
+    [{_,[message,f]}] = :ets.lookup(:msgTable, message_id)
+
+    cond do
+      type==1 -># means retweet
+      IO.puts("User#{to}: User#{from} retweeted tweet of User#{retweet_origin}: #{message}")
+      type==2 -> # means mention
+      IO.puts("User#{to}: User#{retweet_origin} mentioned you in tweet: #{message}")
+      true->IO.puts("User#{to}: #{message} from #{from}")
+    end
+    {:noreply,state}
+  end
+
+
   def getPID(uid) do
+    #IO.puts(uid)
     [{_,data}] = :ets.lookup(:usrProcessTable, uid)
     pid = Enum.at(data,2)
     pid
   end
 
-  def addMessageRec(message_id,pid) do
-    GenServer.cast(pid, {:addMsgRec,message_id})
-  end
-
   def getListRec(pid) do
     {:ok,list}=GenServer.call(pid,{:getListRec})
     list
-  end
-
-  def addMessageSend(message_id,pid) do
-    GenServer.cast(pid, {:addMsgSend,message_id})
   end
 
   def getListSend(pid) do
@@ -86,45 +188,30 @@ defmodule User do
     end
     {:noreply,state}
   end
-
-
   # TODO add whether it was a mention or retweet
   def handle_cast({:displayPendingMsg,uid},state) do
-
-
     pid = User.getPID(uid)
-
-
     cond do
       :ets.member(:pending, uid) -> [{_,list}]=:ets.lookup(:pending, uid)
-      Enum.each(list, fn([m,f])->
+      Enum.each(list, fn([m,f,t,o])->
         #User.addMesageRec(m,pid)
-        GenServer.cast(pid, {:addMsgRec,m})
+        GenServer.cast(pid, {:addMsgRec,m,t,o})
         GenServer.cast(pid, {:rec_msg,f,uid,m})
       end)
       true->IO.puts("no tweets")
     end
-
-
-
-
-
-
-
     # add it to the current state
 
     {:noreply,state}
   end
 
-
-
-  def handle_cast({:addToPending,message_id,from,to},state) do
+  def handle_cast({:addToPending,message_id,from,to,type,retweet_origin},state) do
     #IO.inspect(:ets.lookup(:pending, to))
     cond do
       :ets.member(:pending, to) -> [{_,curr_list}]=:ets.lookup(:pending, to)
-            curr_list=curr_list ++ [[message_id,from]]
+            curr_list=curr_list ++ [[message_id,from,type,retweet_origin]]
             :ets.insert(:pending, {to,curr_list})
-      true->:ets.insert(:pending, {to,[[message_id,from]]})
+      true->:ets.insert(:pending, {to,[[message_id,from,type,retweet_origin]]})
     end
     {:noreply,state}
   end
@@ -132,33 +219,6 @@ defmodule User do
   def handle_cast({:logOutUser},state) do
     # here we simply change the state of the user
     {:noreply,[Enum.at(state, 0),Enum.at(state, 1),0,Enum.at(state, 3),Enum.at(state, 4)]}
-  end
-
-  def handle_cast({:addMsgSend,message_id},state) do
-    #get list
-    list = Enum.at(state,4)
-    # append new message id
-    list = list ++ [message_id]
-    {:noreply, [Enum.at(state, 0),Enum.at(state, 1),Enum.at(state, 2),Enum.at(state, 3),list]}
-  end
-
-  def handle_cast({:addMsgRec,message_id},state) do
-    list = Enum.at(state,3)
-    # append new message id
-    list = list ++ [message_id]
-    {:noreply, [Enum.at(state, 0),Enum.at(state, 1),Enum.at(state, 2),list,Enum.at(state, 4)]}
-  end
-
-  def handle_cast({:rec_msg,from,to,message_id},state) do
-    #:ets.insert(:msgTable,{time_stamp,message})
-    [{_,[message,from]}] = :ets.lookup(:msgTable, message_id)
-    IO.puts("User#{to}: #{message} from #{from}")
-    {:noreply,state}
-  end
-
-  def handle_cast({:sendMsg,uid,msg},state) do
-    Engine.distributeMsg(uid,msg);
-    {:noreply,state}
   end
 
   def handle_cast({:getSubMsg,sub},state) do
@@ -170,7 +230,7 @@ defmodule User do
    # IO.inspect(list)
     # for each message search in table
     IO.puts("Here are your result")
-    Enum.each(list, fn (message_id) ->
+    Enum.each(list, fn ([message_id,type,retweet_origin]) ->
       [{_,[message,from]}] = :ets.lookup(:msgTable, message_id)
       if from == sub do
         IO.puts("Tweet: #{message} from #{from}")
